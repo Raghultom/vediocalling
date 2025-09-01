@@ -20,8 +20,9 @@ const ActiveVideoCall = () => {
   const [isMicMuted, setIsMicMuted] = useState(false);
 
   const roomRef = useRef(null);
-  const videoRef = useRef(null);   // Remote video
-  const localVideoRef = useRef(null); // Local preview
+  const videoRef = useRef(null);         // For remote video (also plays audio)
+  const audioRef = useRef(null);         // Dedicated audio element
+  const localVideoRef = useRef(null);    // Local preview
 
   useEffect(() => {
     if (!token) {
@@ -47,13 +48,10 @@ const ActiveVideoCall = () => {
         await liveKitRoom.connect('wss://test-project-yjtscd8m.livekit.cloud', token);
         console.log('✅ Connected to LiveKit');
 
-        // Start audio immediately (usually allowed)
         await setupAudio(liveKitRoom);
+        await startCamera(liveKitRoom);
 
         setLoading(false);
-
-        // Auto-start camera or show button
-        await startCamera(liveKitRoom);
       } catch (err) {
         console.error('🔴 Connection failed:', err);
         setError(`Connection error: ${err.message}`);
@@ -71,42 +69,35 @@ const ActiveVideoCall = () => {
     };
   }, [token, roomName]);
 
-  // Setup microphone
+  // ✅ Setup microphone
   const setupAudio = async (room) => {
     try {
       const audioTrack = await createLocalAudioTrack();
       await room.localParticipant.publishTrack(audioTrack);
       console.log('🎤 Microphone published');
     } catch (err) {
-      console.warn('🔇 Mic access denied:', err);
-      setError((prev) => prev + ' | Mic failed');
+      console.warn('🔇 Mic access failed:', err);
+      setError((prev) => prev + ' | Mic: ' + err.message);
     }
   };
 
-  // Start camera (can be called on mount or button press)
+  // ✅ Start camera
   const startCamera = async (room = roomRef.current) => {
     if (!room || isCameraOn) return;
 
     try {
-      console.log('📹 Creating video track...');
       const videoTrack = await createLocalVideoTrack({ resolution: 'h720' });
-
-      if (localVideoRef.current) {
-        videoTrack.attach(localVideoRef.current);
-        console.log('🎥 Attached local video');
-      }
-
+      videoTrack.attach(localVideoRef.current);
       await room.localParticipant.publishTrack(videoTrack);
-      console.log('📤 Video track published');
       setIsCameraOn(true);
+      console.log('📹 Camera started and published');
     } catch (err) {
       console.error('🔴 Camera failed:', err);
       setError((prev) => prev + ' | Camera: ' + err.message);
-      // Show fallback button
     }
   };
 
-  // Handle remote tracks
+  // ✅ Handle incoming tracks
   useEffect(() => {
     if (!roomRef.current) return;
 
@@ -114,9 +105,18 @@ const ActiveVideoCall = () => {
 
     const handleTrackSubscribed = (track, publication, participant) => {
       console.log('📥 Track subscribed:', track.kind, 'from', participant.identity);
+
       if (track.kind === Track.Kind.Video) {
+        // Attach video to video element
         track.attach(videoRef.current);
-        console.log('📺 Remote video attached');
+        console.log('📺 Video attached');
+      }
+
+      if (track.kind === Track.Kind.Audio) {
+        // ✅ Attach audio to both video AND audio element
+        track.attach(videoRef.current);
+        track.attach(audioRef.current);
+        console.log('🔊 Audio attached to video and audio elements');
       }
     };
 
@@ -141,15 +141,14 @@ const ActiveVideoCall = () => {
   }, []);
 
   const toggleMic = () => {
-    const isMuted = !isMicMuted;
-    setIsMicMuted(isMuted);
-    roomRef.current?.localParticipant?.setMicrophoneEnabled(!isMuted);
+    const muted = !isMicMuted;
+    setIsMicMuted(muted);
+    roomRef.current?.localParticipant.setMicrophoneEnabled(!muted);
   };
 
   const endCall = () => {
     if (roomRef.current) {
       roomRef.current.disconnect();
-      roomRef.current = null;
     }
     navigate(-1);
   };
@@ -160,7 +159,7 @@ const ActiveVideoCall = () => {
         <div className="text-center space-y-4">
           <div className="animate-pulse w-16 h-16 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
           <h2 className="text-xl font-semibold text-foreground">Joining Call...</h2>
-          <p className="text-muted-foreground">Please wait</p>
+          <p className="text-muted-foreground">Allow camera/mic</p>
           {error && <p className="text-error text-sm mt-2">{error}</p>}
         </div>
       </div>
@@ -179,8 +178,7 @@ const ActiveVideoCall = () => {
 
       {/* Video Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-6xl">
-        
-        {/* Remote Video (Buyer) */}
+        {/* Remote Video */}
         <div className="bg-muted rounded-xl overflow-hidden shadow-lg border border-border">
           <h3 className="bg-card px-4 py-2 text-sm font-medium text-foreground/80">Buyer</h3>
           <div className="aspect-video bg-black relative">
@@ -190,15 +188,11 @@ const ActiveVideoCall = () => {
               playsInline
               className="w-full h-full object-cover"
             />
-            {!videoRef.current?.srcObject && (
-              <div className="absolute inset-0 flex items-center justify-center text-white bg-black/30">
-                {participants.length > 0 ? '📹 Video loading...' : 'Waiting for buyer...'}
-              </div>
-            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
           </div>
         </div>
 
-        {/* Local Preview (You) */}
+        {/* Local Preview */}
         <div className="bg-muted rounded-xl overflow-hidden shadow-lg border border-border">
           <h3 className="bg-card px-4 py-2 text-sm font-medium text-foreground/80">You</h3>
           <div className="aspect-video bg-gray-900 relative">
@@ -250,7 +244,10 @@ const ActiveVideoCall = () => {
         </button>
       </div>
 
-      {/* Debug Error Banner */}
+      {/* ✅ Hidden Audio Element (Critical for Audio Playback) */}
+      <audio ref={audioRef} autoPlay playsInline className="hidden" />
+
+      {/* Error Banner */}
       {error && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-error text-error-foreground px-4 py-2 rounded-lg text-sm max-w-xs">
           {error}
