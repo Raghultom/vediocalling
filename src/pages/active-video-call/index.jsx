@@ -250,19 +250,18 @@
 
 
 
-
 // ActiveVideoCall.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LiveKitRoom,
   useTracks,
   useLocalParticipant,
-  useRoomContext
+  VideoRenderer,
+  AudioRenderer,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 
-import VideoStream from './components/VideoStream';
 import CallControls from './components/CallControls';
 import CallStatusOverlay from './components/CallStatusOverlay';
 import ParticipantInfo from './components/ParticipantInfo';
@@ -288,7 +287,6 @@ const ActiveVideoCall = () => {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [showParticipants, setShowParticipants] = useState(true);
   const [showNetworkStats, setShowNetworkStats] = useState(false);
-  const [isLocalVideoMinimized, setIsLocalVideoMinimized] = useState(true);
 
   // Network statistics mock
   const [networkStats] = useState({
@@ -300,7 +298,7 @@ const ActiveVideoCall = () => {
   // Call duration timer
   useEffect(() => {
     const timer = setInterval(() => {
-      setCallDuration(prev => prev + 1);
+      setCallDuration((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -326,17 +324,15 @@ const ActiveVideoCall = () => {
       audio
       video
       onDisconnected={() =>
-        navigate('/call-history', { state: { callEnded: true, duration: callDuration } })
+        navigate('/call-history', {
+          state: { callEnded: true, duration: callDuration },
+        })
       }
       className="fixed inset-0 z-500 bg-black overflow-hidden"
       onClick={handleScreenTap}
     >
-      <VideoLayer
-        isCameraOff={isCameraOff}
-        isMuted={isMuted}
-        isLocalVideoMinimized={isLocalVideoMinimized}
-        setIsLocalVideoMinimized={setIsLocalVideoMinimized}
-      />
+      {/* Render all participants */}
+      <VideoLayer isMuted={isMuted} isCameraOff={isCameraOff} />
 
       {/* Overlays */}
       <CallStatusOverlay
@@ -347,7 +343,7 @@ const ActiveVideoCall = () => {
         showStats={showNetworkStats}
       />
       <ParticipantInfo
-        participants={[]} // You can fill with live participant data if needed
+        participants={[]} // Replace with actual participant data if needed
         isVisible={showParticipants}
         autoHide
         autoHideDelay={8000}
@@ -356,9 +352,13 @@ const ActiveVideoCall = () => {
       <CallControls
         isMuted={isMuted}
         isCameraOff={isCameraOff}
-        onMuteToggle={() => setIsMuted(prev => !prev)}
-        onCameraToggle={() => setIsCameraOff(prev => !prev)}
-        onEndCall={() => navigate('/call-history', { state: { callEnded: true, duration: callDuration } })}
+        onMuteToggle={() => setIsMuted((prev) => !prev)}
+        onCameraToggle={() => setIsCameraOff((prev) => !prev)}
+        onEndCall={() =>
+          navigate('/call-history', {
+            state: { callEnded: true, duration: callDuration },
+          })
+        }
         callDuration={callDuration}
         isVisible={controlsVisible}
         onVisibilityChange={setControlsVisible}
@@ -375,7 +375,10 @@ const ActiveVideoCall = () => {
       {/* Toggles */}
       <div className="hidden lg:block absolute top-4 left-4 z-410">
         <button
-          onClick={(e) => { e.stopPropagation(); setShowNetworkStats(!showNetworkStats); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowNetworkStats(!showNetworkStats);
+          }}
           className="bg-black bg-opacity-50 text-white rounded-lg px-3 py-2 text-sm hover:bg-opacity-70"
         >
           {showNetworkStats ? 'Hide Stats' : 'Show Stats'}
@@ -383,7 +386,10 @@ const ActiveVideoCall = () => {
       </div>
       <div className="hidden lg:block absolute top-4 left-28 z-410">
         <button
-          onClick={(e) => { e.stopPropagation(); setShowParticipants(!showParticipants); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowParticipants(!showParticipants);
+          }}
           className="bg-black bg-opacity-50 text-white rounded-lg px-3 py-2 text-sm hover:bg-opacity-70"
         >
           {showParticipants ? 'Hide Info' : 'Show Info'}
@@ -393,78 +399,74 @@ const ActiveVideoCall = () => {
   );
 };
 
-// Render video streams from LiveKit
-const VideoLayer = ({ isCameraOff, isMuted, isLocalVideoMinimized, setIsLocalVideoMinimized }) => {
-  const tracks = useTracks([Track.Source.Camera]);
+// Render video & audio tracks
+const VideoLayer = ({ isMuted, isCameraOff }) => {
+  const tracks = useTracks([
+    Track.Source.Camera,
+    Track.Source.Microphone,
+    Track.Source.ScreenShare,
+  ]);
   const { localParticipant } = useLocalParticipant();
 
   if (!tracks || tracks.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-white">
-        Waiting for video…
+        Waiting for participants…
       </div>
     );
   }
 
-  return (
-    <>
-      {/* Remote participants */}
-      {tracks
-        .filter(t => t?.track && !t.participant.isLocal)
-        .map(({ track, participant }) => (
-          <VideoTile
-            key={track.sid}
-            track={track}
-            participant={participant}
-            className="absolute inset-0 w-full h-full"
-            onClick={() => setIsLocalVideoMinimized(!isLocalVideoMinimized)}
-          />
-        ))}
-
-      {/* Local participant */}
-      {tracks
-        .filter(t => t?.track && t.participant.isLocal)
-        .map(({ track, participant }) => (
-          <VideoTile
-            key={track.sid}
-            track={track}
-            participant={participant}
-            isLocal
-            isMuted={isMuted}
-            isVideoEnabled={!isCameraOff}
-            isDraggable
-            className="w-48 h-36 lg:w-64 lg:h-48 shadow-elevation border-2 border-white border-opacity-20"
-            onClick={() => setIsLocalVideoMinimized(!isLocalVideoMinimized)}
-          />
-        ))}
-    </>
-  );
-};
-
-const VideoTile = ({ track, participant, ...props }) => {
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (track && ref.current) {
-      track.attach(ref.current);
-      return () => track.detach(ref.current);
+  // Group by participant
+  const participantsMap = {};
+  tracks.forEach(({ publication, participant }) => {
+    if (!participantsMap[participant.sid]) {
+      participantsMap[participant.sid] = { participant, publications: [] };
     }
-  }, [track]);
+    participantsMap[participant.sid].publications.push(publication);
+  });
 
-  if (!track) {
-    return null; // don’t render until track is ready
-  }
+  const participants = Object.values(participantsMap);
 
   return (
-    <VideoStream
-      ref={ref}
-      participantName={participant?.identity || "Unknown"}
-      {...props}
-    />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full h-full p-2">
+      {participants.map(({ participant, publications }) => (
+        <div
+          key={participant.sid}
+          className="relative flex items-center justify-center bg-black rounded-lg overflow-hidden"
+        >
+          {publications.map((publication) => {
+            const track = publication.track;
+            if (!track) return null;
+
+            if (publication.kind === 'video') {
+              return (
+                <VideoRenderer
+                  key={publication.trackSid}
+                  track={track}
+                  isLocal={participant.isLocal}
+                  className="w-full h-full object-cover"
+                  muted={participant.isLocal} // mute local preview
+                />
+              );
+            }
+
+            if (publication.kind === 'audio' && !participant.isLocal) {
+              return (
+                <AudioRenderer key={publication.trackSid} track={track} />
+              );
+            }
+
+            return null;
+          })}
+
+          {/* Overlay participant name */}
+          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+            {participant.identity || 'Unknown'}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 };
-
-
-
 
 export default ActiveVideoCall;
