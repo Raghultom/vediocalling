@@ -251,20 +251,18 @@
 
 
 // ActiveVideoCall.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LiveKitRoom,
   useTracks,
   useLocalParticipant,
-  VideoRenderer,
-  AudioRenderer,
+  useAudioPlayback,
+  RoomAudioRenderer,
+  VideoTrack,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-
-import CallControls from './components/CallControls';
-import CallStatusOverlay from './components/CallStatusOverlay';
-import ParticipantInfo from './components/ParticipantInfo';
+import '@livekit/components-styles';
 
 const ActiveVideoCall = () => {
   const navigate = useNavigate();
@@ -285,35 +283,23 @@ const ActiveVideoCall = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [showParticipants, setShowParticipants] = useState(true);
-  const [showNetworkStats, setShowNetworkStats] = useState(false);
 
-  // Network statistics mock
-  const [networkStats] = useState({
-    bitrate: 1250000,
-    packetLoss: 0.2,
-    latency: 45,
-  });
+  // Handle autoplay: some browsers require a user gesture before audio can play.
+  const { canPlayAudio, startAudio } = useAudioPlayback();
 
-  // Call duration timer
+  // Timer
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCallDuration((prev) => prev + 1);
-    }, 1000);
+    const timer = setInterval(() => setCallDuration((t) => t + 1), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-hide controls
+  // Auto-hide controls after inactivity
   useEffect(() => {
-    if (controlsVisible) {
-      const timer = setTimeout(() => {
-        setControlsVisible(false);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
+    if (!controlsVisible) return;
+    const t = setTimeout(() => setControlsVisible(false), 4500);
+    return () => clearTimeout(t);
   }, [controlsVisible]);
 
-  // Handle screen tap to show controls
   const handleScreenTap = () => setControlsVisible(true);
 
   return (
@@ -323,148 +309,165 @@ const ActiveVideoCall = () => {
       connect
       audio
       video
-      onDisconnected={() =>
-        navigate('/call-history', {
-          state: { callEnded: true, duration: callDuration },
-        })
-      }
-      className="fixed inset-0 z-500 bg-black overflow-hidden"
+      // optional: theme styles from @livekit/components-styles
+      data-lk-theme="default"
+      className="fixed inset-0 z-[500] bg-black overflow-hidden"
       onClick={handleScreenTap}
+      onDisconnected={() =>
+        navigate('/call-history', { state: { callEnded: true, duration: callDuration } })
+      }
     >
-      {/* Render all participants */}
-      <VideoLayer isMuted={isMuted} isCameraOff={isCameraOff} />
+      {/* Plays all remote audio tracks (mics / screen-share) */}
+      <RoomAudioRenderer />
 
-      {/* Overlays */}
-      <CallStatusOverlay
-        isConnecting={false}
-        connectionQuality="good"
-        participantCount={2}
-        networkStats={networkStats}
-        showStats={showNetworkStats}
-      />
-      <ParticipantInfo
-        participants={[]} // Replace with actual participant data if needed
-        isVisible={showParticipants}
-        autoHide
-        autoHideDelay={8000}
-      />
+      {/* Video layer */}
+      <VideoLayer />
 
-      <CallControls
+      {/* Floating controls */}
+      <Controls
         isMuted={isMuted}
+        setIsMuted={setIsMuted}
         isCameraOff={isCameraOff}
-        onMuteToggle={() => setIsMuted((prev) => !prev)}
-        onCameraToggle={() => setIsCameraOff((prev) => !prev)}
-        onEndCall={() =>
-          navigate('/call-history', {
-            state: { callEnded: true, duration: callDuration },
-          })
+        setIsCameraOff={setIsCameraOff}
+        onEnd={() =>
+          navigate('/call-history', { state: { callEnded: true, duration: callDuration } })
         }
-        callDuration={callDuration}
         isVisible={controlsVisible}
-        onVisibilityChange={setControlsVisible}
+        setVisible={setControlsVisible}
       />
 
-      {!controlsVisible && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-410">
-          <div className="bg-black bg-opacity-50 rounded-full px-4 py-2 animate-pulse">
-            <p className="text-white text-sm opacity-75">Tap to show controls</p>
-          </div>
+      {/* If the browser blocked audio, show an enable button */}
+      {!canPlayAudio && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[510]">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              startAudio();
+            }}
+            className="bg-white text-black rounded-full px-4 py-2 text-sm shadow"
+          >
+            Tap to enable sound
+          </button>
         </div>
       )}
 
-      {/* Toggles */}
-      <div className="hidden lg:block absolute top-4 left-4 z-410">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowNetworkStats(!showNetworkStats);
-          }}
-          className="bg-black bg-opacity-50 text-white rounded-lg px-3 py-2 text-sm hover:bg-opacity-70"
-        >
-          {showNetworkStats ? 'Hide Stats' : 'Show Stats'}
-        </button>
-      </div>
-      <div className="hidden lg:block absolute top-4 left-28 z-410">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowParticipants(!showParticipants);
-          }}
-          className="bg-black bg-opacity-50 text-white rounded-lg px-3 py-2 text-sm hover:bg-opacity-70"
-        >
-          {showParticipants ? 'Hide Info' : 'Show Info'}
-        </button>
-      </div>
+      {!controlsVisible && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[510]">
+          <div className="bg-black/50 rounded-full px-4 py-2 animate-pulse">
+            <p className="text-white text-sm opacity-80">Tap anywhere to show controls</p>
+          </div>
+        </div>
+      )}
     </LiveKitRoom>
   );
 };
 
-// Render video & audio tracks
-const VideoLayer = ({ isMuted, isCameraOff }) => {
-  const tracks = useTracks([
-    Track.Source.Camera,
-    Track.Source.Microphone,
-    Track.Source.ScreenShare,
+/** Renders all camera/screen-share tracks in a responsive grid.
+ * Uses VideoTrack from @livekit/components-react.
+ */
+const VideoLayer = () => {
+  // Grab camera + screenshare tracks from everyone (local + remote)
+  const trackRefs = useTracks([
+    { source: Track.Source.Camera, withPlaceholder: false },
+    { source: Track.Source.ScreenShare, withPlaceholder: false },
   ]);
-  const { localParticipant } = useLocalParticipant();
 
-  if (!tracks || tracks.length === 0) {
+  // Sort - show screenshares first, then cameras
+  const ordered = useMemo(() => {
+    return [...trackRefs].sort((a, b) => {
+      const aShare = a.source === Track.Source.ScreenShare ? 0 : 1;
+      const bShare = b.source === Track.Source.ScreenShare ? 0 : 1;
+      return aShare - bShare;
+    });
+  }, [trackRefs]);
+
+  if (ordered.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-white">
-        Waiting for participants…
+      <div className="absolute inset-0 flex items-center justify-center text-white/80">
+        Waiting for video…
       </div>
     );
   }
 
-  // Group by participant
-  const participantsMap = {};
-  tracks.forEach(({ publication, participant }) => {
-    if (!participantsMap[participant.sid]) {
-      participantsMap[participant.sid] = { participant, publications: [] };
-    }
-    participantsMap[participant.sid].publications.push(publication);
-  });
-
-  const participants = Object.values(participantsMap);
+  // simple 1–4 person layout; tweak as you like
+  const gridCols =
+    ordered.length <= 1 ? 'grid-cols-1' : ordered.length <= 4 ? 'grid-cols-2' : 'grid-cols-3';
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full h-full p-2">
-      {participants.map(({ participant, publications }) => (
+    <div className={`absolute inset-0 grid ${gridCols} gap-2 p-2`}>
+      {ordered.map((tr, idx) => (
         <div
-          key={participant.sid}
-          className="relative flex items-center justify-center bg-black rounded-lg overflow-hidden"
+          key={`${tr.participant?.identity ?? 'p'}-${tr.source}-${idx}`}
+          className="relative bg-black rounded-xl overflow-hidden"
         >
-          {publications.map((publication) => {
-            const track = publication.track;
-            if (!track) return null;
-
-            if (publication.kind === 'video') {
-              return (
-                <VideoRenderer
-                  key={publication.trackSid}
-                  track={track}
-                  isLocal={participant.isLocal}
-                  className="w-full h-full object-cover"
-                  muted={participant.isLocal} // mute local preview
-                />
-              );
-            }
-
-            if (publication.kind === 'audio' && !participant.isLocal) {
-              return (
-                <AudioRenderer key={publication.trackSid} track={track} />
-              );
-            }
-
-            return null;
-          })}
-
-          {/* Overlay participant name */}
-          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-            {participant.identity || 'Unknown'}
+          <VideoTrack trackRef={tr} className="w-full h-full object-cover" />
+          {/* name pill */}
+          <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+            {tr.participant?.identity ?? 'Unknown'}
           </div>
         </div>
       ))}
+    </div>
+  );
+};
+
+/** Bottom control bar: mic / camera / leave.
+ * Actually toggles LiveKit publish state on the LocalParticipant.
+ */
+const Controls = ({ isMuted, setIsMuted, isCameraOff, setIsCameraOff, onEnd, isVisible, setVisible }) => {
+  const { localParticipant } = useLocalParticipant();
+
+  // Drive LiveKit from UI state:
+  useEffect(() => {
+    if (!localParticipant) return;
+    // When isMuted=true, disable mic publishing
+    localParticipant.setMicrophoneEnabled(!isMuted).catch(() => {});
+  }, [isMuted, localParticipant]);
+
+  useEffect(() => {
+    if (!localParticipant) return;
+    // When isCameraOff=true, disable camera publishing
+    localParticipant.setCameraEnabled(!isCameraOff).catch(() => {});
+  }, [isCameraOff, localParticipant]);
+
+  return (
+    <div
+      className={`absolute left-1/2 -translate-x-1/2 bottom-4 z-[520] transition-opacity ${
+        isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+      }`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-3 bg-black/60 backdrop-blur px-4 py-2 rounded-full border border-white/10">
+        <button
+          onClick={() => setIsMuted((v) => !v)}
+          className={`px-4 py-2 rounded-full text-sm ${
+            isMuted ? 'bg-red-600 text-white' : 'bg-white text-black'
+          }`}
+        >
+          {isMuted ? 'Unmute' : 'Mute'}
+        </button>
+        <button
+          onClick={() => setIsCameraOff((v) => !v)}
+          className={`px-4 py-2 rounded-full text-sm ${
+            isCameraOff ? 'bg-yellow-400 text-black' : 'bg-white text-black'
+          }`}
+        >
+          {isCameraOff ? 'Camera On' : 'Camera Off'}
+        </button>
+        <button
+          onClick={onEnd}
+          className="px-4 py-2 rounded-full text-sm bg-red-700 text-white"
+        >
+          End
+        </button>
+        <button
+          onClick={() => setVisible(false)}
+          className="px-3 py-2 rounded-full text-xs bg-white/10 text-white"
+          title="Hide controls"
+        >
+          Hide
+        </button>
+      </div>
     </div>
   );
 };
