@@ -20,9 +20,9 @@ const ActiveVideoCall = () => {
   const [isMicMuted, setIsMicMuted] = useState(false);
 
   const roomRef = useRef(null);
-  const videoRef = useRef(null);         // For remote video (also plays audio)
-  const audioRef = useRef(null);         // Dedicated audio element
+  const videoRef = useRef(null);         // Remote video/audio
   const localVideoRef = useRef(null);    // Local preview
+  const audioRef = useRef(null);         // Hidden audio
 
   useEffect(() => {
     if (!token) {
@@ -49,7 +49,7 @@ const ActiveVideoCall = () => {
         console.log('✅ Connected to LiveKit');
 
         await setupAudio(liveKitRoom);
-        await startCamera(liveKitRoom);
+        await startCamera(liveKitRoom); // Will show error if fails
 
         setLoading(false);
       } catch (err) {
@@ -76,21 +76,32 @@ const ActiveVideoCall = () => {
       await room.localParticipant.publishTrack(audioTrack);
       console.log('🎤 Microphone published');
     } catch (err) {
-      console.warn('🔇 Mic access failed:', err);
+      console.warn('🔇 Mic failed:', err);
       setError((prev) => prev + ' | Mic: ' + err.message);
     }
   };
 
-  // ✅ Start camera
+  // ✅ Start camera with debug
   const startCamera = async (room = roomRef.current) => {
     if (!room || isCameraOn) return;
 
     try {
+      console.log('📹 Attempting to create video track...');
       const videoTrack = await createLocalVideoTrack({ resolution: 'h720' });
-      videoTrack.attach(localVideoRef.current);
+
+      // ✅ Delay attach until next tick to ensure ref is ready
+      setTimeout(() => {
+        if (localVideoRef.current) {
+          videoTrack.attach(localVideoRef.current);
+          console.log('🎥 Local video attached to preview');
+          setIsCameraOn(true);
+        } else {
+          console.warn('⚠️ localVideoRef not ready');
+        }
+      }, 100);
+
       await room.localParticipant.publishTrack(videoTrack);
-      setIsCameraOn(true);
-      console.log('📹 Camera started and published');
+      console.log('📤 Video track published');
     } catch (err) {
       console.error('🔴 Camera failed:', err);
       setError((prev) => prev + ' | Camera: ' + err.message);
@@ -107,16 +118,20 @@ const ActiveVideoCall = () => {
       console.log('📥 Track subscribed:', track.kind, 'from', participant.identity);
 
       if (track.kind === Track.Kind.Video) {
-        // Attach video to video element
-        track.attach(videoRef.current);
-        console.log('📺 Video attached');
+        // ✅ Attach to video element
+        setTimeout(() => {
+          if (videoRef.current) {
+            track.attach(videoRef.current);
+            console.log('📺 Remote video attached');
+          } else {
+            console.warn('⚠️ videoRef is null during attach');
+          }
+        }, 50);
       }
 
       if (track.kind === Track.Kind.Audio) {
-        // ✅ Attach audio to both video AND audio element
         track.attach(videoRef.current);
         track.attach(audioRef.current);
-        console.log('🔊 Audio attached to video and audio elements');
       }
     };
 
@@ -186,9 +201,13 @@ const ActiveVideoCall = () => {
               ref={videoRef}
               autoPlay
               playsInline
-              className="w-full h-full object-cover"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
+            {!videoRef.current?.srcObject && (
+              <div className="absolute inset-0 flex items-center justify-center text-white bg-black/40 text-sm">
+                {participants.length > 0 ? '📹 Video paused or loading...' : 'Waiting...'}
+              </div>
+            )}
           </div>
         </div>
 
@@ -201,7 +220,7 @@ const ActiveVideoCall = () => {
               autoPlay
               muted
               playsInline
-              className="w-full h-full object-cover"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
             {!isCameraOn && (
               <div
@@ -244,8 +263,8 @@ const ActiveVideoCall = () => {
         </button>
       </div>
 
-      {/* ✅ Hidden Audio Element (Critical for Audio Playback) */}
-      <audio ref={audioRef} autoPlay playsInline className="hidden" />
+      {/* Hidden Audio */}
+      <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />
 
       {/* Error Banner */}
       {error && (
