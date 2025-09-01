@@ -1,7 +1,12 @@
 // src/pages/ActiveVideoCall.jsx
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Room, createLocalVideoTrack, createLocalAudioTrack } from 'livekit-client';
+import {
+  Room,
+  createLocalVideoTrack,
+  createLocalAudioTrack,
+  Track,
+} from 'livekit-client';
 
 const ActiveVideoCall = () => {
   const location = useLocation();
@@ -11,15 +16,15 @@ const ActiveVideoCall = () => {
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isPublishing, setIsPublishing] = useState(false);
 
-  const roomRef = useRef(null);           // Persist room instance
-  const videoRef = useRef(null);          // Remote video element
-  const localVideoRef = useRef(null);     // Local preview element
+  const roomRef = useRef(null);
+  const videoRef = useRef(null);          // Remote video
+  const localVideoRef = useRef(null);     // Local preview
 
   useEffect(() => {
-    // Validate required data
     if (!token) {
-      setError('Authorization token is missing.');
+      setError('Token is missing.');
       setLoading(false);
       return;
     }
@@ -29,148 +34,150 @@ const ActiveVideoCall = () => {
       return;
     }
 
-    const liveKitRoom = new Room();
+    const liveKitRoom = new Room({
+      // Optional: Debug logging
+      logLevel: 'debug', // ← This helps see what's happening
+    });
 
-    // Function to setup local camera and mic
-    const setupLocalTracks = async (roomInstance) => {
+    const setupTracksAndJoin = async () => {
       try {
-        console.log('📹 Attempting to access camera and microphone...');
+        console.log('🔍 Attempting to connect to room:', roomName);
 
-        // Create local tracks
-        const videoTrack = await createLocalVideoTrack({ resolution: 'h720' });
-        const audioTrack = await createLocalAudioTrack();
+        await liveKitRoom.connect('wss://test-project-yjtscd8m.livekit.cloud', token);
+        console.log('✅ Connected to LiveKit room');
 
-        // Attach to local video preview
-        videoTrack.attach(localVideoRef.current);
-        console.log('✅ Local video attached to preview');
+        roomRef.current = liveKitRoom;
+        setLoading(false);
 
-        // Publish tracks to room
-        await roomInstance.localParticipant.publishTrack(videoTrack);
-        await roomInstance.localParticipant.publishTrack(audioTrack);
+        // --- Step 1: Create local video/audio tracks ---
+        let videoTrack, audioTrack;
 
-        console.log('✅ Camera and microphone published to room');
-      } catch (err) {
-        console.error('❌ Could not access camera or mic:', err);
-        let message = err.message;
-
-        if (err.name === 'NotAllowedError') {
-          message = 'Camera/mic access denied. Please allow permissions.';
-        } else if (err.name === 'NotFoundError') {
-          message = 'No camera or microphone found on this device.';
-        } else if (err.name === 'NotReadableError') {
-          message = 'Camera is in use by another application.';
+        try {
+          console.log('📹 Requesting camera...');
+          videoTrack = await createLocalVideoTrack({
+            resolution: 'h720',
+            cameraFacing: 'user',
+          });
+        } catch (err) {
+          console.warn('❌ Camera failed:', err);
+          setError('Camera access denied or not available.');
         }
 
-        setError(`Media error: ${message}`);
+        try {
+          console.log('🎤 Requesting microphone...');
+          audioTrack = await createLocalAudioTrack();
+        } catch (err) {
+          console.warn('❌ Mic failed:', err);
+          setError(prev => prev + ' | Mic access failed.');
+        }
+
+        if (!videoTrack && !audioTrack) {
+          setError('❌ Could not access camera or mic.');
+          return;
+        }
+
+        // --- Step 2: Attach to local preview ---
+        if (videoTrack && localVideoRef.current) {
+          videoTrack.attach(localVideoRef.current);
+          console.log('✅ Local video preview attached');
+        }
+
+        // --- Step 3: Publish tracks ---
+        if (!isPublishing) {
+          setIsPublishing(true);
+
+          if (videoTrack) {
+            await liveKitRoom.localParticipant.publishTrack(videoTrack);
+            console.log('📤 Published video track');
+          }
+
+          if (audioTrack) {
+            await liveKitRoom.localParticipant.publishTrack(audioTrack);
+            console.log('📤 Published audio track');
+          }
+
+          setIsPublishing(false);
+        }
+      } catch (err) {
+        console.error('🚨 Setup failed:', err);
+        setError(`Setup error: ${err.message}`);
+        setLoading(false);
       }
     };
 
-    // Connect to LiveKit room
-    liveKitRoom
-      .connect('wss://test-project-yjtscd8m.livekit.cloud', token)
-      .then(async () => {
-        console.log(`✅ Connected to room: ${roomName}`);
-        roomRef.current = liveKitRoom;
+    // Start connection and setup
+    setupTracksAndJoin();
 
-        // Setup local tracks immediately using liveKitRoom instance
-        await setupLocalTracks(liveKitRoom);
-
-        // Update state
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('❌ Failed to connect to LiveKit:', err);
-        setError(`Connection failed: ${err.message}`);
-        setLoading(false);
-      });
-
-    // Handle participant events
+    // --- Event Listeners ---
     const handleParticipantConnected = (participant) => {
-      console.log('👤 Participant joined:', participant.identity);
+      console.log('👤 Joined:', participant.identity);
       setParticipants(Array.from(liveKitRoom.participants.values()));
     };
 
-    const handleParticipantDisconnected = (participant) => {
-      console.log('👤 Participant left:', participant.identity);
-      setParticipants(Array.from(liveKitRoom.participants.values()));
-    };
-
-    // Handle remote video/audio tracks
-    const handleTrackSubscribed = (track, publication, participant) => {
-      console.log(`📥 Remote ${track.kind} track added from ${participant.identity}`);
-      if (track.kind === 'video' || track.kind === 'audio') {
+    const handleTrackSubscribed = (track, pub, participant) => {
+      console.log(`📥 Subscribed to ${track.kind} from ${participant.identity}`);
+      if (track.kind === Track.Kind.Video || track.kind === Track.Kind.Audio) {
         track.attach(videoRef.current);
       }
     };
 
-    const handleTrackUnsubscribed = (track) => {
-      console.log('📤 Remote track removed');
-      track.detach().forEach((element) => {
-        if (element.srcObject) element.srcObject = null;
-      });
+    const handleParticipantDisconnected = () => {
+      setParticipants(Array.from(liveKitRoom.participants.values()));
     };
 
-    // Subscribe to events
     liveKitRoom.on('participantConnected', handleParticipantConnected);
     liveKitRoom.on('participantDisconnected', handleParticipantDisconnected);
     liveKitRoom.on('trackSubscribed', handleTrackSubscribed);
-    liveKitRoom.on('trackUnsubscribed', handleTrackUnsubscribed);
 
-    // Update participant list on change
-    const updateParticipants = () => {
-      setParticipants(Array.from(liveKitRoom.participants.values()));
-    };
-    liveKitRoom.on('participantConnected', updateParticipants);
-    liveKitRoom.on('participantDisconnected', updateParticipants);
-
-    // Cleanup on unmount
     return () => {
       if (roomRef.current) {
-        console.log('👋 Disconnecting from room...');
+        console.log('👋 Disconnecting...');
         roomRef.current.disconnect();
         roomRef.current = null;
       }
     };
   }, [token, roomName]);
 
-  // Navigate back when ending call
+  // Update participant list
+  useEffect(() => {
+    if (!roomRef.current) return;
+    const room = roomRef.current;
+
+    const update = () => setParticipants(Array.from(room.participants.values()));
+    room.on('participantConnected', update);
+    room.on('participantDisconnected', update);
+
+    return () => {
+      room.off('participantConnected', update);
+      room.off('participantDisconnected', update);
+    };
+  }, []);
+
   const endCall = () => {
     if (roomRef.current) {
       roomRef.current.disconnect();
       roomRef.current = null;
     }
-    navigate(-1); // Go back to previous page
+    navigate(-1);
   };
 
   if (loading) {
     return (
       <div style={styles.container}>
-        <p>🔗 Connecting to call...</p>
-        <p>Allow camera/microphone when prompted</p>
+        <h2>📞 Joining Call...</h2>
+        <p>Allow camera and microphone when prompted</p>
         {error && <p style={{ color: 'red' }}>{error}</p>}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={styles.container}>
-        <h3>❌ Error</h3>
-        <p>{error}</p>
-        <button onClick={endCall} style={styles.button}>
-          Go Back
-        </button>
       </div>
     );
   }
 
   return (
     <div style={styles.container}>
-      <h2>📹 Live Video Call: {roomName}</h2>
+      <h2>🎥 Video Call: {roomName}</h2>
 
       {/* Remote Video */}
       <div style={styles.videoContainer}>
-        <h4>Other Participant</h4>
+        <h4>Buyer</h4>
         <video
           ref={videoRef}
           autoPlay
@@ -181,7 +188,7 @@ const ActiveVideoCall = () => {
 
       {/* Local Preview */}
       <div style={styles.previewContainer}>
-        <h4>Your Camera (Preview)</h4>
+        <h4>Your Camera (You)</h4>
         <video
           ref={localVideoRef}
           autoPlay
@@ -191,32 +198,26 @@ const ActiveVideoCall = () => {
         />
       </div>
 
-      {/* Participants List */}
+      {/* Participants */}
       <div style={styles.info}>
         <p>👥 Connected: {participants.length + 1}</p>
-        <ul>
-          <li>You</li>
-          {participants.map((p) => (
-            <li key={p.sid}>{p.identity}</li>
-          ))}
-        </ul>
       </div>
 
-      {/* End Call Button */}
+      {/* End Call */}
       <button onClick={endCall} style={styles.endButton}>
-        🚫 End Call
+        🛑 End Call
       </button>
     </div>
   );
 };
 
-// Simple inline styles
+// Styles
 const styles = {
   container: {
     padding: '20px',
     fontFamily: 'Arial, sans-serif',
     textAlign: 'center',
-    backgroundColor: '#f7f7f7',
+    backgroundColor: '#f9f9f9',
     minHeight: '100vh',
   },
   videoContainer: {
@@ -228,7 +229,7 @@ const styles = {
     height: '400px',
     backgroundColor: '#000',
     borderRadius: '12px',
-    border: '1px solid #ddd',
+    border: '2px solid #007bff',
   },
   previewContainer: {
     marginTop: '20px',
@@ -238,7 +239,7 @@ const styles = {
     height: '150px',
     backgroundColor: '#333',
     borderRadius: '8px',
-    border: '2px solid #007bff',
+    border: '2px solid #28a745',
   },
   info: {
     marginTop: '20px',
