@@ -320,7 +320,7 @@ const ActiveVideoCall = () => {
 
   return (
     <LiveKitRoom
-      serverUrl="wss://test-project-yjtscd8m.livekit.cloud/"
+      serverUrl="wss://test-project-yjtscd8m.livekit.cloud"
       token={token}
       connect
       audio
@@ -398,11 +398,19 @@ const VideoLayer = ({ isCameraOff, isMuted, isLocalVideoMinimized, setIsLocalVid
   const tracks = useTracks([Track.Source.Camera]);
   const { localParticipant } = useLocalParticipant();
 
+  if (!tracks || tracks.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-white">
+        Waiting for video…
+      </div>
+    );
+  }
+
   return (
     <>
-      {/* Remote participant (full screen) */}
+      {/* Remote participants */}
       {tracks
-        .filter(t => !t.participant.isLocal)
+        .filter(t => t?.track && !t.participant.isLocal)
         .map(({ track, participant }) => (
           <VideoTile
             key={track.sid}
@@ -413,9 +421,9 @@ const VideoLayer = ({ isCameraOff, isMuted, isLocalVideoMinimized, setIsLocalVid
           />
         ))}
 
-      {/* Local participant (PIP) */}
+      {/* Local participant */}
       {tracks
-        .filter(t => t.participant.isLocal)
+        .filter(t => t?.track && t.participant.isLocal)
         .map(({ track, participant }) => (
           <VideoTile
             key={track.sid}
@@ -433,24 +441,30 @@ const VideoLayer = ({ isCameraOff, isMuted, isLocalVideoMinimized, setIsLocalVid
   );
 };
 
-// Attach live track to your custom VideoStream
 const VideoTile = ({ track, participant, ...props }) => {
   const ref = useRef(null);
 
   useEffect(() => {
-    if (ref.current) {
+    if (track && ref.current) {
       track.attach(ref.current);
       return () => track.detach(ref.current);
     }
   }, [track]);
 
+  if (!track) {
+    return null; // don’t render until track is ready
+  }
+
   return (
     <VideoStream
       ref={ref}
-      participantName={participant.identity}
+      participantName={participant?.identity || "Unknown"}
       {...props}
     />
   );
 };
+
+
+
 
 export default ActiveVideoCall;
