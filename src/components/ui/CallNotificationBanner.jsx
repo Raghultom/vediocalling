@@ -14,22 +14,46 @@ const CallNotificationBanner = ({
 }) => {
   const [timeLeft, setTimeLeft] = useState(Math.floor(autoHideDelay / 1000));
 
+  // useEffect(() => {
+  //   if (isVisible && callType === 'incoming') {
+  //     const interval = setInterval(() => {
+  //       setTimeLeft((prev) => {
+  //         if (prev <= 1) {
+  //           onDismiss?.();
+  //           return 0;
+  //         }
+  //         return prev - 1;
+  //       });
+  //     }, 1000);
+
+  //     return () => clearInterval(interval);
+  //   }
+  // }, [isVisible, callType, onDismiss]);
+
+
   useEffect(() => {
-    if (isVisible && callType === 'incoming') {
-      const interval = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            onDismiss?.();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+  if (isVisible && callType === 'incoming') {
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          onDismiss?.();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-      return () => clearInterval(interval);
-    }
-  }, [isVisible, callType, onDismiss]);
+    return () => clearInterval(interval);
+  }
+}, [isVisible, callType, onDismiss]); // ✅ Correct
 
+// ✅ Reset timeLeft when isVisible changes
+useEffect(() => {
+  if (isVisible) {
+    setTimeLeft(Math.floor(autoHideDelay / 1000));
+  }
+}, [isVisible, autoHideDelay]); // ✅ This ensures reset on new call
   useEffect(() => {
     if (isVisible) {
       setTimeLeft(Math.floor(autoHideDelay / 1000));

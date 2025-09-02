@@ -25,54 +25,63 @@ const VendorDashboard = () => {
   const [callSession, setCallSession] = useState(null);
 
 
-  // // Mock incoming call simulation
-  // useEffect(() => {
-  //   const timer = setTimeout(() => {
-  //     if (isAvailable && !isCallActive) {
-  //       setShowCallNotification(true);
-  //       setCurrentCaller('Sarah Johnson');
-  //     }
-  //   }, 10000); // Show notification after 10 seconds
+ 
 
-  //   return () => clearTimeout(timer);
-  // }, [isAvailable, isCallActive]);
-
-
-
-  //   const handleAvailabilityToggle = (available) => {
+  // const handleAvailabilityToggle = (available) => {
   //   setIsAvailable(available);
 
   //   if (available) {
-  //     // ✅ Connect to WebSocket when available
-  //     const socket = new WebSocket("ws://13.203.254.15:8000/ws/room/join");
+  //     const ws = new WebSocket("ws://13.203.254.15:8000/ws/room/join");
+  //     setSocket(ws);
 
-  //     socket.onopen = () => {
+  //     ws.onopen = () => {
   //       console.log("✅ WebSocket connected (availability ON)");
-
   //       const payload = {
-  //         user_id: 86,      // 🔹 Replace with dynamic userId if needed
-  //         vendor_id: 86,    // 🔹 Replace with actual vendorId
-  //         product_id: 5,   // 🔹 Replace with actual productId
+  //         user_id: 86,   // Replace with real userId
+  //         vendor_id: 86, // Replace with vendorId
+  //         product_id: 5, // Replace with productId
   //       };
-
-  //       socket.send(JSON.stringify(payload));
+  //       ws.send(JSON.stringify(payload));
   //       console.log("📤 Sent availability payload:", payload);
   //     };
 
-  //     socket.onmessage = (event) => {
+      
+  //     ws.onmessage = (event) => {
   //       console.log("📩 Incoming message:", event.data);
+  //       try {
+  //         const msg = JSON.parse(event.data);
+
+  //         if (msg.is_incoming_call && msg.event === "call_request") {
+  //           setShowCallNotification(true);
+  //           setCurrentCaller(msg.customer_name);
+  //           setIncomingCallData(msg);
+  //         }
+
+  //         // ✅ When call is started, store room & token and navigate
+  //         if (msg.event === "call_started") {
+  //           setCallSession({
+  //             room: msg.room,
+  //             token: msg.token,
+  //           });
+
+  //           navigate('/active-video-call', {
+  //             state: { room: msg.room, token: msg.token },
+  //           });
+  //         }
+  //       } catch (err) {
+  //         console.error("❌ Error parsing WebSocket message:", err);
+  //       }
   //     };
 
-  //     socket.onerror = (error) => {
+
+  //     ws.onerror = (error) => {
   //       console.error("❌ WebSocket error:", error);
   //     };
 
-  //     socket.onclose = () => {
+  //     ws.onclose = () => {
   //       console.log("🔌 WebSocket closed");
   //     };
-
   //   } else {
-  //     // When unavailable, hide notification & close socket if open
   //     setShowCallNotification(false);
   //     if (socket && socket.readyState === WebSocket.OPEN) {
   //       socket.close();
@@ -82,100 +91,72 @@ const VendorDashboard = () => {
   // };
 
 
-  //   const handleAcceptCall = (callId) => {
-  //     setShowCallNotification(false);
-  //     setIsCallActive(true);
-  //     setCallDuration(0);
-  //     navigate('/active-video-call');
-  //   };
+const handleAvailabilityToggle = (available) => {
+  setIsAvailable(available);
 
-  //   const handleRejectCall = (callId) => {
-  //     setShowCallNotification(false);
-  //     setCurrentCaller('');
-  //   };
+  if (available) {
+    const ws = new WebSocket("ws://13.203.254.15:8000/ws/room/join");
+    setSocket(ws);
 
-
-
-  const handleAvailabilityToggle = (available) => {
-    setIsAvailable(available);
-
-    if (available) {
-      const ws = new WebSocket("ws://13.203.254.15:8000/ws/room/join");
-      setSocket(ws);
-
-      ws.onopen = () => {
-        console.log("✅ WebSocket connected (availability ON)");
-        const payload = {
-          user_id: 86,   // Replace with real userId
-          vendor_id: 86, // Replace with vendorId
-          product_id: 5, // Replace with productId
-        };
-        ws.send(JSON.stringify(payload));
-        console.log("📤 Sent availability payload:", payload);
+    ws.onopen = () => {
+      console.log("✅ WebSocket connected (availability ON)");
+      const payload = {
+        user_id: 86,
+        vendor_id: 86,
+        product_id: 5,
       };
+      ws.send(JSON.stringify(payload));
+      console.log("📤 Sent availability payload:", payload);
+    };
 
-      
-      ws.onmessage = (event) => {
-        console.log("📩 Incoming message:", event.data);
-        try {
-          const msg = JSON.parse(event.data);
+    ws.onmessage = (event) => {
+      console.log("📩 Incoming message:", event.data);
+      try {
+        const msg = JSON.parse(event.data);
 
-          if (msg.is_incoming_call && msg.event === "call_request") {
-            setShowCallNotification(true);
+        // ✅ Handle incoming call request
+        if (msg.is_incoming_call && msg.event === "call_request") {
+          // 🔁 Reset first, then show (ensures re-render)
+          setShowCallNotification(false);
+          setTimeout(() => {
             setCurrentCaller(msg.customer_name);
             setIncomingCallData(msg);
-          }
-
-          // ✅ When call is started, store room & token and navigate
-          if (msg.event === "call_started") {
-            setCallSession({
-              room: msg.room,
-              token: msg.token,
-            });
-
-            navigate('/active-video-call', {
-              state: { room: msg.room, token: msg.token },
-            });
-          }
-        } catch (err) {
-          console.error("❌ Error parsing WebSocket message:", err);
+            setShowCallNotification(true); // ✅ Now it will trigger
+          }, 0);
         }
-      };
 
+        // ✅ Handle call start
+        if (msg.event === "call_started") {
+          setCallSession({
+            room: msg.room,
+            token: msg.token,
+          });
 
-      ws.onerror = (error) => {
-        console.error("❌ WebSocket error:", error);
-      };
-
-      ws.onclose = () => {
-        console.log("🔌 WebSocket closed");
-      };
-    } else {
-      setShowCallNotification(false);
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.close();
-        console.log("🔌 WebSocket closed (availability OFF)");
+          navigate('/active-video-call', {
+            state: { room: msg.room, token: msg.token },
+          });
+        }
+      } catch (err) {
+        console.error("❌ Error parsing WebSocket message:", err);
       }
+    };
+
+    ws.onerror = (error) => {
+      console.error("❌ WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("🔌 WebSocket closed");
+    };
+  } else {
+    // ❌ Turn OFF: close socket and hide notification
+    setShowCallNotification(false);
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close();
+      console.log("🔌 WebSocket closed (availability OFF)");
     }
-  };
-
-  // const handleAcceptCall = () => {
-  //   if (incomingCallData && socket && socket.readyState === WebSocket.OPEN) {
-  //     const acceptPayload = {
-  //       action: "accept_call",
-  //       customer_id: incomingCallData.customer_id,
-  //     };
-  //     socket.send(JSON.stringify(acceptPayload));
-  //     console.log("📤 Sent accept payload:", acceptPayload);
-  //   }
-
-  //   setShowCallNotification(false);
-  //   setIsCallActive(true);
-  //   setCallDuration(0);
-  //   navigate('/active-video-call');
-  // };
-
-
+  }
+};
   const handleAcceptCall = () => {
     if (incomingCallData && socket && socket.readyState === WebSocket.OPEN) {
       const acceptPayload = {
