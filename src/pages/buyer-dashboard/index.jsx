@@ -7,6 +7,8 @@ import VendorGrid from './components/VendorGrid';
 import FilterChips from './components/FilterChips';
 import SearchBar from './components/SearchBar';
 import RecentCallsWidget from './components/RecentCallsWidget';
+import { encryptData } from 'utils/crypto';
+
 
 const BuyerDashboard = () => {
   const navigate = useNavigate();
@@ -26,7 +28,7 @@ const BuyerDashboard = () => {
   const mockVendors = [
     {
       id: 86,
-      userId:47,
+      userId: 47,
       businessName: "TechSolutions Pro",
       serviceCategory: "IT Services",
       profilePhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
@@ -38,7 +40,7 @@ const BuyerDashboard = () => {
     },
     {
       id: 86,
-      userId:43,
+      userId: 43,
       businessName: "Creative Design Studio",
       serviceCategory: "Design & Marketing",
       profilePhoto: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
@@ -220,98 +222,134 @@ const BuyerDashboard = () => {
     setActiveFilters(filters);
   };
 
-//   const handleCallNow = async (vendor) => {
-//   // Show connecting notification
-//   setCallNotification({
-//     isVisible: true,
-//     callerName: vendor?.businessName,
-//     callType: 'connecting'
-//   });
 
-//   // Simulate connection attempt
-//   await new Promise(resolve => setTimeout(resolve, 2000));
+  // const handleCallNow = (vendor) => {
+  //   const socket = new WebSocket("ws://13.203.254.15:8000/ws/room/join");
 
-//   // Simulate random call outcome
-//   const outcomes = ['success', 'failed', 'busy'];
-//   const outcome = outcomes?.[Math.floor(Math.random() * outcomes?.length)];
+  //   socket.onopen = () => {
+  //     console.log("✅ WebSocket connected");
 
-//   if (outcome === 'success') {
-//     setCallNotification({ isVisible: false, callerName: '', callType: 'incoming' });
+  //     const payload = {
+  //       user_id: vendor?.userId,                 // current user
+  //       vendor_id: vendor?.id ,  // selected vendor
+  //       product_id: 5,
+  //     };
 
-//     // 🔹 Pass payload when navigating
-//     navigate('/active-video-call', { 
-//       state: { 
-//         vendor: vendor,
-//         callType: 'outgoing',
-//         wsPayload: { 
-//           user_id: 47, 
-//           vendor_id: vendor?.id ?? 2, 
-//           product_id: 5 
-//         }
-//       } 
-//     });
-//   } else {
-//     setCallNotification({
-//       isVisible: true,
-//       callerName: vendor?.businessName,
-//       callType: 'failed'
-//     });
-    
-//     // Auto-hide failed notification
-//     setTimeout(() => {
-//       setCallNotification({ isVisible: false, callerName: '', callType: 'incoming' });
-//     }, 3000);
-//   }
-// };
+  //     socket.send(JSON.stringify(payload));
+  //     console.log("📤 Sent payload:", payload);
+  //   };
 
-const handleCallNow = (vendor) => {
-  const socket = new WebSocket("ws://13.203.254.15:8000/ws/room/join");
+  //   socket.onmessage = (event) => {
+  //     console.log("📥 Message from server:", event.data);
 
-  socket.onopen = () => {
-    console.log("✅ WebSocket connected");
+  //     try {
+  //       const msg = JSON.parse(event.data);
 
-    const payload = {
-      user_id: vendor?.userId,                 // current user
-      vendor_id: vendor?.id ,  // selected vendor
+  //       if (msg.event === "call_started") {
+  //         // ✅ Save room & token in state
+  //         setCallSession({
+  //           room: msg.room,
+  //           token: msg.token,
+  //         });
+
+  //         // ✅ Navigate to call screen with params
+  //         navigate("/active-video-call", {
+  //           state: { room: msg.room, token: msg.token },
+  //         });
+  //       }
+  //     } catch (err) {
+  //       console.error("❌ Failed to parse message:", err);
+  //     }
+  //   };
+
+  //   socket.onerror = (error) => {
+  //     console.error("❌ WebSocket error:", error);
+  //   };
+
+  //   socket.onclose = () => {
+  //     console.log("🔒 WebSocket connection closed");
+  //   };
+  // };
+
+
+  const handleCallNow = (vendor) => {
+    const socket = new WebSocket("wss://livestreaming.emeetify.com/videoCall/ws/room/join");
+
+    const encryptedData = encryptData({
+      user_id: vendor?.userId,
+      vendor_id: vendor?.id,
       product_id: 5,
+    });
+
+    const encryptedPayload = { data: encryptedData };
+
+    socket.onopen = () => {
+      console.log("✅ WebSocket connected");
+      socket.send(JSON.stringify(encryptedPayload));
+      console.log("📤 Sent encrypted payload");
     };
 
-    socket.send(JSON.stringify(payload));
-    console.log("📤 Sent payload:", payload);
-  };
+    socket.onmessage = (event) => {
+      console.log("📩 Raw message from server:", event.data);
 
-  socket.onmessage = (event) => {
-    console.log("📥 Message from server:", event.data);
+      try {
+        const response = JSON.parse(event.data);
 
-    try {
-      const msg = JSON.parse(event.data);
+        // ✅ Case 1: Call is starting now
+        if (response.event === "call_started") {
+          console.log("🚀 Call started! Navigating...");
+          setCallSession({
+            room: response.room,
+            token: response.token,
+          });
 
-      if (msg.event === "call_started") {
-        // ✅ Save room & token in state
-        setCallSession({
-          room: msg.room,
-          token: msg.token,
-        });
+          navigate("/active-video-call", {
+            state: { room: response.room, token: response.token },
+          });
 
-        // ✅ Navigate to call screen with params
-        navigate("/active-video-call", {
-          state: { room: msg.room, token: msg.token },
-        });
+          socket.close();
+        }
+
+        // ✅ Case 2: Request queued (vendor offline)
+        else if (response.event === "request_sent" && response.status === "waiting") {
+          const userMessage = response.message || "Your call request has been sent and is waiting for the vendor.";
+
+          // 📢 Show user feedback
+          alert(userMessage); // Simple fallback
+
+          // ✅ Or use a toast/notification instead of alert (better UX)
+          // showToast(userMessage, 'info');
+        }
+
+        // ✅ Case 3: Optional – Vendor busy
+        else if (response.vendor_busy) {
+          alert("Vendor is currently busy. Your request is in queue.");
+        }
+
+        // ✅ Case 4: Immediate error
+        else if (response.event === "error" || response.status === "error") {
+          alert(`❌ ${response.message || "Failed to send call request."}`);
+        }
+
+        // 🔽 Log unexpected events
+        else {
+          console.log("ℹ️ Other event:", response);
+        }
+      } catch (err) {
+        console.error("❌ Failed to parse message:", err);
+        alert("❌ Unexpected error: Could not process response.");
       }
-    } catch (err) {
-      console.error("❌ Failed to parse message:", err);
-    }
-  };
+    };
 
-  socket.onerror = (error) => {
-    console.error("❌ WebSocket error:", error);
-  };
+    socket.onerror = (error) => {
+      console.error("❌ WebSocket error:", error);
+      alert("❌ Connection failed. Please check your network and try again.");
+    };
 
-  socket.onclose = () => {
-    console.log("🔒 WebSocket connection closed");
+    socket.onclose = () => {
+      console.log("🔒 WebSocket closed");
+    };
   };
-};
-
 
 
 
@@ -333,8 +371,8 @@ const handleCallNow = (vendor) => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header Navigation */}
-      <HeaderNavigation 
-        userRole="buyer" 
+      <HeaderNavigation
+        userRole="buyer"
         notificationCount={3}
         isCallActive={false}
       />
@@ -345,8 +383,8 @@ const handleCallNow = (vendor) => {
         callerType="vendor"
         callType={callNotification?.callType}
         onDismiss={handleCallNotificationDismiss}
-        onAccept={() => {}}
-        onReject={() => {}}
+        onAccept={() => { }}
+        onReject={() => { }}
       />
       {/* Main Content */}
       <div className="flex">
@@ -390,8 +428,8 @@ const handleCallNow = (vendor) => {
                 {/* Results Summary */}
                 <div className="mb-4">
                   <p className="text-sm text-muted-foreground">
-                    {isLoading ? 'Loading vendors...' : 
-                     `Showing ${filteredVendors?.length} of ${vendors?.length} vendors`}
+                    {isLoading ? 'Loading vendors...' :
+                      `Showing ${filteredVendors?.length} of ${vendors?.length} vendors`}
                     {searchQuery && ` for "${searchQuery}"`}
                     {activeFilters?.length > 0 && ` with ${activeFilters?.length} filter${activeFilters?.length > 1 ? 's' : ''} applied`}
                   </p>

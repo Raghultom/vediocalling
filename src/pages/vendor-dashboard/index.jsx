@@ -95,7 +95,7 @@ const handleAvailabilityToggle = (available) => {
   setIsAvailable(available);
 
   if (available) {
-    const ws = new WebSocket("ws://13.203.254.15:8000/ws/room/join");
+    const ws = new WebSocket("wss://livestreaming.emeetify.com/videoCall/ws/room/join");
     setSocket(ws);
 
     ws.onopen = () => {
