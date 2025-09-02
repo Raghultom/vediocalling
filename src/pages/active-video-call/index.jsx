@@ -220,7 +220,7 @@ const ActiveVideoCall = () => {
             <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             {!videoRef.current?.srcObject && (
               <div className="absolute inset-0 flex items-center justify-center text-white bg-black/40 text-sm">
-                {participants.length ? '📹 Loading...' : 'Waiting...'}
+                {/* {participants.length ? '📹 Loading...' : 'Waiting...'} */}
               </div>
             )}
           </div>

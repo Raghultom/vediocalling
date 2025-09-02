@@ -26,6 +26,7 @@ const BuyerDashboard = () => {
   const mockVendors = [
     {
       id: 86,
+      userId:47,
       businessName: "TechSolutions Pro",
       serviceCategory: "IT Services",
       profilePhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
@@ -35,17 +36,18 @@ const BuyerDashboard = () => {
       location: "New York, NY",
       isOnline: true
     },
-    // {
-    //   id: 2,
-    //   businessName: "Creative Design Studio",
-    //   serviceCategory: "Design & Marketing",
-    //   profilePhoto: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
-    //   rating: 4.9,
-    //   reviewCount: 89,
-    //   description: "Award-winning graphic design and branding solutions that make your business stand out.",
-    //   location: "Los Angeles, CA",
-    //   isOnline: true
-    // },
+    {
+      id: 86,
+      userId:43,
+      businessName: "Creative Design Studio",
+      serviceCategory: "Design & Marketing",
+      profilePhoto: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
+      rating: 4.9,
+      reviewCount: 89,
+      description: "Award-winning graphic design and branding solutions that make your business stand out.",
+      location: "Los Angeles, CA",
+      isOnline: true
+    },
     // {
     //   id: 3,
     //   businessName: "Home Repair Experts",
@@ -269,8 +271,8 @@ const handleCallNow = (vendor) => {
     console.log("✅ WebSocket connected");
 
     const payload = {
-      user_id: 47,                 // current user
-      vendor_id: vendor?.id ?? 2,  // selected vendor
+      user_id: vendor?.userId,                 // current user
+      vendor_id: vendor?.id ,  // selected vendor
       product_id: 5,
     };
 
